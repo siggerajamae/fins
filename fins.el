@@ -23,7 +23,7 @@
   :type 'string
   :group 'fins)
 
-(defcustom fins-grep-lines-command "rg --no-heading --with-filename --smart-case --line-number --column --color=never"
+(defcustom fins-grep-lines-command "rg --json --smart-case"
   "Command used for grepping lines from files."
   :type 'string
   :group 'fins)
@@ -122,6 +122,32 @@ Supports `setf' on the bindings."
           "[^\0\n]+"     ; one or more chars, no null bytes or newlines
           "\\'")         ; end of string
   "Regexp matching a valid file name.")
+
+(defun fins--parse-json (obj &optional term)
+  "Parse a JSON match OBJ into a `fins-entry'.
+When TERM is non-nil, highlight all matches of TERM in content."
+  (let* ((data (gethash "data" obj))
+         (submatches (gethash "submatches" data))
+         (path (gethash "text" (gethash "path" data)))
+         (file (file-relative-name path))
+         (line (gethash "line_number" data))
+         (column (gethash "start" (aref submatches 0)))
+         (content (string-trim-right (gethash "text" (gethash "lines" data)) "\n")))
+    (when term (fins--highlight content term))
+    (make-fins-entry
+     :file file
+     :line line
+     :column column
+     :content content)))
+
+(defun fins--parse-jsons (lines &optional term)
+  "Parse JSON LINES into a list of `fins-entry' structs.
+When TERM is non-nil, highlight all matches of TERM in content."
+  (delq nil (mapcar (lambda (line)
+                      (let ((obj (json-parse-string line)))
+                        (when (equal (gethash "type" obj) "match")
+                          (fins--parse-json obj term))))
+                    lines)))
 
 (defun fins--grep-entry-p (entry)
   "Return non-nil if ENTRY is a grep entry with line, column, and content."
@@ -328,10 +354,11 @@ Malformed candidates are silently skipped."
 (defun fins-expand (term)
   "Expand entries into grep matches for TERM."
   (interactive "sGrep: ")
-  (let* ((lines (fins--run-grep fins-grep-lines-command term (fins--files)))
-         (new-entries (fins--parse-candidates lines term)))
-    (setq-local fins-entries new-entries)
-    (fins--redisplay)))
+  (setq-local fins-entries
+              (fins--parse-jsons
+               (fins--run-grep fins-grep-lines-command term (fins--files))
+               term))
+  (fins--redisplay))
 
 (defun fins-mark-by-name (term)
   "Mark entries whose file matches TERM."
