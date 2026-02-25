@@ -1,10 +1,10 @@
-;;; again.el --- Again Greps And Interactively Narrows -*- lexical-binding: t; -*-
+;;; fins.el --- Fins Interactively Narrows Searches -*- lexical-binding: t; -*-
 
 ;; Author: Sigge Rajamäe
 ;; Version: 0.1.0
 ;; Package-Requires: ((emacs "29.1"))
 ;; Keywords: matching, tools
-;; URL: https://github.com/siggerajamae/again
+;; URL: https://github.com/siggerajamae/fins
 
 ;;; Commentary:
 
@@ -14,93 +14,93 @@
 
 (require 'cl-lib)
 
-(defgroup again nil
-  "Again Greps And Interactively Narrows."
+(defgroup fins nil
+  "Fins Greps And Interactively Narrows."
   :group 'matching)
 
-(defcustom again-find-command "fd --color=never"
+(defcustom fins-find-command "fd --color=never"
   "Command used for finding files by name."
   :type 'string
-  :group 'again)
+  :group 'fins)
 
-(defcustom again-grep-files-command "rg --files-with-matches --smart-case --color=never"
+(defcustom fins-grep-files-command "rg --files-with-matches --smart-case --color=never"
   "Command used for finding files whose contents match a term."
   :type 'string
-  :group 'again)
+  :group 'fins)
 
-(defcustom again-grep-lines-command "rg --no-heading --with-filename --smart-case --line-number --column --color=never"
+(defcustom fins-grep-lines-command "rg --no-heading --with-filename --smart-case --line-number --column --color=never"
   "Command used for grepping lines from files."
   :type 'string
-  :group 'again)
+  :group 'fins)
 
-(defcustom again-highlight-faces '(consult-highlight-match match)
+(defcustom fins-highlight-faces '(consult-highlight-match match)
   "Faces recognized as match highlights when parsing candidates."
   :type '(repeat face)
-  :group 'again)
+  :group 'fins)
 
-(defcustom again-use-consult-preview t
+(defcustom fins-use-consult-preview t
   "Whether to use consult preview for the entry at point."
   :type 'boolean
-  :group 'again)
+  :group 'fins)
 
-(defface again-file
+(defface fins-file
   '((t :inherit font-lock-function-name-face))
-  "Face used to highlight files in Again buffers.")
+  "Face used to highlight files in Fins buffers.")
 
-(defface again-line-number
+(defface fins-line-number
   '((t :inherit font-lock-keyword-face))
-  "Face used to highlight line numbers in Again buffers.")
+  "Face used to highlight line numbers in Fins buffers.")
 
-(defface again-mark
+(defface fins-mark
   '((t :inherit warning))
-  "Face used to highlight marked entries in Again buffers.")
+  "Face used to highlight marked entries in Fins buffers.")
 
-(defvar-keymap again-mode-map
-  :doc "Keymap for Again mode."
+(defvar-keymap fins-mode-map
+  :doc "Keymap for Fins mode."
   :parent special-mode-map
-  "* n" #'again-mark-by-name
-  "* c" #'again-mark-by-content
-  "* l" #'again-mark-by-lines
-  "t"   #'again-toggle-marks
+  "* n" #'fins-mark-by-name
+  "* c" #'fins-mark-by-content
+  "* l" #'fins-mark-by-lines
+  "t"   #'fins-toggle-marks
   "n"   #'next-line
   "p"   #'previous-line
-  "m"   #'again-mark
-  "u"   #'again-unmark
-  "U"   #'again-unmark-all
-  "e"   #'again-expand
-  "w"   #'again-collapse
-  "d"   #'again-delete-marked
-  "RET" #'again-visit)
+  "m"   #'fins-mark
+  "u"   #'fins-unmark
+  "U"   #'fins-unmark-all
+  "e"   #'fins-expand
+  "w"   #'fins-collapse
+  "d"   #'fins-delete-marked
+  "RET" #'fins-visit)
 
-(define-derived-mode again-mode special-mode "Again"
+(define-derived-mode fins-mode special-mode "Fins"
   "Major mode for iterative narrowing of file and grep matches."
-  (setq-local again-entries nil))
+  (setq-local fins-entries nil))
 
-(cl-defstruct again-entry
+(cl-defstruct fins-entry
   file
   line
   column
   content
   marked)
 
-(defmacro again--with-entry (entry &rest body)
+(defmacro fins--with-entry (entry &rest body)
   "Bind the slots of ENTRY to variables and execute BODY.
 Binds `file', `line', `column', `content', and `marked'.
 Supports `setf' on the bindings."
   (declare (indent 1))
   (let ((sym (gensym "entry")))
     `(let ((,sym ,entry))
-       (cl-symbol-macrolet ((file (again-entry-file ,sym))
-                            (line (again-entry-line ,sym))
-                            (column (again-entry-column ,sym))
-                            (content (again-entry-content ,sym))
-                            (marked (again-entry-marked ,sym)))
+       (cl-symbol-macrolet ((file (fins-entry-file ,sym))
+                            (line (fins-entry-line ,sym))
+                            (column (fins-entry-column ,sym))
+                            (content (fins-entry-content ,sym))
+                            (marked (fins-entry-marked ,sym)))
          ,@body))))
 
-(defvar-local again-entries nil
-  "List of `again-entry' entries in the current buffer.")
+(defvar-local fins-entries nil
+  "List of `fins-entry' entries in the current buffer.")
 
-(defconst again--grep-column-regexp
+(defconst fins--grep-column-regexp
   (concat "\\`"          ; beginning of string
           "\\([^:]+\\)"  ; capture file
           ":"            ; separator
@@ -112,7 +112,7 @@ Supports `setf' on the bindings."
           "\\'")         ; end of string
   "Regexp matching grep output with column numbers.")
 
-(defconst again--grep-regexp
+(defconst fins--grep-regexp
   (concat "\\`"          ; beginning of string
           "\\([^:]+\\)"  ; capture file
           ":"            ; separator
@@ -122,60 +122,60 @@ Supports `setf' on the bindings."
           "\\'")         ; end of string
   "Regexp matching standard grep output format.")
 
-(defconst again--file-regexp
+(defconst fins--file-regexp
   (concat "\\`"          ; beginning of string
           "[^\0\n]+"     ; one or more chars, no null bytes or newlines
           "\\'")         ; end of string
   "Regexp matching a valid file name.")
 
-(defun again--grep-entry-p (entry)
+(defun fins--grep-entry-p (entry)
   "Return non-nil if ENTRY is a grep entry with line, column, and content."
-  (again--with-entry entry
+  (fins--with-entry entry
                      (and line column content)))
 
-(defun again--format-mark (marked)
+(defun fins--format-mark (marked)
   "Format the mark indicator for MARKED."
   (if marked
-      (propertize "*" 'face 'again-mark)
+      (propertize "*" 'face 'fins-mark)
     " "))
 
-(defun again--format-file (file)
+(defun fins--format-file (file)
   "Format FILE name with face."
-  (propertize file 'face 'again-file))
+  (propertize file 'face 'fins-file))
 
-(defun again--format-line (line)
+(defun fins--format-line (line)
   "Format LINE number with face."
-  (propertize (number-to-string line) 'face 'again-line-number))
+  (propertize (number-to-string line) 'face 'fins-line-number))
 
-(defun again--format-content (content)
+(defun fins--format-content (content)
   "Format CONTENT string."
   content)
 
-(defun again--format-entry (entry)
+(defun fins--format-entry (entry)
   "Format ENTRY as a display string."
-  (again--with-entry entry
-                     (let ((text (if (again--grep-entry-p entry)
+  (fins--with-entry entry
+                     (let ((text (if (fins--grep-entry-p entry)
                                      (format "%s %s:%s:%s"
-                                             (again--format-mark marked)
-                                             (again--format-file file)
-                                             (again--format-line line)
-                                             (again--format-content content))
+                                             (fins--format-mark marked)
+                                             (fins--format-file file)
+                                             (fins--format-line line)
+                                             (fins--format-content content))
                                    (format "%s %s"
-                                           (again--format-mark marked)
-                                           (again--format-file file)))))
-                       (propertize text 'again-entry entry))))
+                                           (fins--format-mark marked)
+                                           (fins--format-file file)))))
+                       (propertize text 'fins-entry entry))))
 
-(defun again--entry-at-point ()
+(defun fins--entry-at-point ()
   "Return the entry at point."
-  (get-text-property (line-beginning-position) 'again-entry))
+  (get-text-property (line-beginning-position) 'fins-entry))
 
-(defun again--find-highlight (content)
+(defun fins--find-highlight (content)
   "Return position of first match highlight in CONTENT, or nil."
-  (cl-dolist (face again-highlight-faces)
+  (cl-dolist (face fins-highlight-faces)
     (when-let ((pos (text-property-any 0 (length content) 'face face content)))
       (cl-return pos))))
 
-(defun again--highlight (content term)
+(defun fins--highlight (content term)
   "Highlight all matches of TERM in CONTENT."
   (let ((start 0))
     (while (string-match (regexp-quote term) content start)
@@ -183,44 +183,44 @@ Supports `setf' on the bindings."
                               'match nil content)
       (setq start (match-end 0)))))
 
-(defun again--parse-candidate (candidate &optional term)
-  "Parse CANDIDATE string into an `again-entry'.
+(defun fins--parse-candidate (candidate &optional term)
+  "Parse CANDIDATE string into an `fins-entry'.
 When TERM is non-nil, highlight all matches of TERM in content."
   (cond
    ;; Match grep entries with column
-   ((string-match again--grep-column-regexp candidate)
+   ((string-match fins--grep-column-regexp candidate)
     (let* ((file (file-relative-name (match-string 1 candidate)))
            (line (string-to-number (match-string 2 candidate)))
            (column (1- (string-to-number (match-string 3 candidate))))
            (content (match-string 4 candidate)))
-      (when term (again--highlight content term))
-      (make-again-entry
+      (when term (fins--highlight content term))
+      (make-fins-entry
        :file file
        :line line
        :column column
        :content content)))
    ;; Match grep entries without column
-   ((string-match again--grep-regexp candidate)
+   ((string-match fins--grep-regexp candidate)
     (let* ((file (file-relative-name (match-string 1 candidate)))
            (line (string-to-number (match-string 2 candidate)))
            (content (match-string 3 candidate))
-           (column (again--find-highlight content)))
-      (make-again-entry
+           (column (fins--find-highlight content)))
+      (make-fins-entry
        :file file
        :line line
        :column column
        :content content)))
    ;; Treat as plain file
-   ((string-match-p again--file-regexp candidate)
-    (make-again-entry :file (file-relative-name candidate)))))
+   ((string-match-p fins--file-regexp candidate)
+    (make-fins-entry :file (file-relative-name candidate)))))
 
-(defun again--parse-candidates (candidates &optional term)
-  "Parse CANDIDATES into a list of `again-entry' structs.
+(defun fins--parse-candidates (candidates &optional term)
+  "Parse CANDIDATES into a list of `fins-entry' structs.
 When TERM is non-nil, highlight all matches of TERM in content.
 Malformed candidates are silently skipped."
-  (delq nil (mapcar (lambda (candidate) (again--parse-candidate candidate term)) candidates)))
+  (delq nil (mapcar (lambda (candidate) (fins--parse-candidate candidate term)) candidates)))
 
-(defun again--run-grep (command term files)
+(defun fins--run-grep (command term files)
   "Run COMMAND with TERM on FILES, return output lines."
   (let* ((args (split-string-and-unquote command))
          (program (car args))
@@ -231,12 +231,12 @@ Malformed candidates are silently skipped."
              (append base-args (list term) expanded-files))
       (split-string (buffer-string) "\n" t))))
 
-(defun again--files ()
-  "Return deduplicated list of files from `again-entries'."
-  (delete-dups (mapcar #'again-entry-file again-entries)))
+(defun fins--files ()
+  "Return deduplicated list of files from `fins-entries'."
+  (delete-dups (mapcar #'fins-entry-file fins-entries)))
 
-(defun again--redisplay ()
-  "Render `again-entries' into the current buffer."
+(defun fins--redisplay ()
+  "Render `fins-entries' into the current buffer."
   (let ((inhibit-read-only t)
         (buffer-undo-list t)
         ;; Record line position and top of viewport
@@ -244,8 +244,8 @@ Malformed candidates are silently skipped."
         (wstart (window-start)))
     (combine-change-calls (point-min) (point-max)
       (erase-buffer)
-      (dolist (entry again-entries)
-        (insert (again--format-entry entry) "\n")))
+      (dolist (entry fins-entries)
+        (insert (fins--format-entry entry) "\n")))
     (goto-char (point-min))
     ;; Restore line position and top of viewport
     ;; TODO: Does there exist a builtin with-command that is not
@@ -253,136 +253,136 @@ Malformed candidates are silently skipped."
     (forward-line (1- line))
     (set-window-start nil wstart)))
 
-(defun again--redisplay-current ()
+(defun fins--redisplay-current ()
   "Redisplay the current line from its entry."
-  (when-let ((entry (again--entry-at-point)))
+  (when-let ((entry (fins--entry-at-point)))
     (let ((inhibit-read-only t)
           (buffer-undo-list t))
       (delete-region (line-beginning-position) (1+ (line-end-position)))
-      (insert (again--format-entry entry) "\n")
+      (insert (fins--format-entry entry) "\n")
       (forward-line -1))))
 
-(defun again--toggle-mark-in-region (beg end)
+(defun fins--toggle-mark-in-region (beg end)
   "Toggle marks on all entries between BEG and END, redisplaying each line."
   (save-excursion
     (goto-char beg)
     (while (< (point) end)
-      (when-let ((entry (again--entry-at-point)))
-        (again--with-entry entry
+      (when-let ((entry (fins--entry-at-point)))
+        (fins--with-entry entry
                            (setf marked (not marked)))
-        (again--redisplay-current))
+        (fins--redisplay-current))
       (forward-line 1))))
 
-(defun again--set-mark-in-region (beg end value)
+(defun fins--set-mark-in-region (beg end value)
   "Set MARKED on all entries between BEG and END, redisplaying each line."
   (save-excursion
     (goto-char beg)
     (while (< (point) end)
-      (when-let ((entry (again--entry-at-point)))
-        (again--with-entry entry
+      (when-let ((entry (fins--entry-at-point)))
+        (fins--with-entry entry
                            (setf marked value))
-        (again--redisplay-current))
+        (fins--redisplay-current))
       (forward-line 1))))
 
-(defun again-mark ()
+(defun fins-mark ()
   "Mark the entry at point, or all entries in the active region."
   (interactive)
   (if (use-region-p)
-      (again--set-mark-in-region (region-beginning) (region-end) t)
-    (when-let ((entry (again--entry-at-point)))
-      (again--with-entry entry
+      (fins--set-mark-in-region (region-beginning) (region-end) t)
+    (when-let ((entry (fins--entry-at-point)))
+      (fins--with-entry entry
                          (setf marked t))
-      (again--redisplay-current)
+      (fins--redisplay-current)
       (forward-line 1))))
 
-(defun again-unmark ()
+(defun fins-unmark ()
   "Unmark the entry at point, or all entries in the active region."
   (interactive)
   (if (use-region-p)
-      (again--set-mark-in-region (region-beginning) (region-end) nil)
-    (when-let ((entry (again--entry-at-point)))
-      (again--with-entry entry
+      (fins--set-mark-in-region (region-beginning) (region-end) nil)
+    (when-let ((entry (fins--entry-at-point)))
+      (fins--with-entry entry
                          (setf marked nil))
-      (again--redisplay-current)
+      (fins--redisplay-current)
       (forward-line 1))))
 
-(defun again-unmark-all ()
+(defun fins-unmark-all ()
   "Unmark all entries."
   (interactive)
-  (dolist (entry again-entries)
-    (again--with-entry entry
+  (dolist (entry fins-entries)
+    (fins--with-entry entry
                        (setf marked nil)))
-  (again--redisplay))
+  (fins--redisplay))
 
-(defun again--buffer-name ()
-  "Return a descriptive name for an Again buffer."
+(defun fins--buffer-name ()
+  "Return a descriptive name for an Fins buffer."
   ;; TODO: Display the original command here if available
-  (format "*Again: %s*"
+  (format "*Fins: %s*"
           (file-name-nondirectory
            (directory-file-name default-directory))))
 
-(defun again-import (candidates)
-  "Import CANDIDATES into an Again buffer."
-  (let ((buf (generate-new-buffer (again--buffer-name))))
+(defun fins-import (candidates)
+  "Import CANDIDATES into an Fins buffer."
+  (let ((buf (generate-new-buffer (fins--buffer-name))))
     (with-current-buffer buf
-      (again-mode)
-      (setq-local again-entries (again--parse-candidates candidates))
-      (again--redisplay))
+      (fins-mode)
+      (setq-local fins-entries (fins--parse-candidates candidates))
+      (fins--redisplay))
     (pop-to-buffer buf)))
 
-(defun again-expand (term)
+(defun fins-expand (term)
   "Expand entries into grep matches for TERM."
   (interactive "sGrep: ")
-  (let* ((lines (again--run-grep again-grep-lines-command term (again--files)))
-         (new-entries (again--parse-candidates lines term)))
-    (setq-local again-entries new-entries)
-    (again--redisplay)))
+  (let* ((lines (fins--run-grep fins-grep-lines-command term (fins--files)))
+         (new-entries (fins--parse-candidates lines term)))
+    (setq-local fins-entries new-entries)
+    (fins--redisplay)))
 
-(defun again-mark-by-name (term)
+(defun fins-mark-by-name (term)
   "Mark entries whose file matches TERM."
   (interactive "sMark by name: ")
-  (dolist (entry again-entries)
-    (again--with-entry entry
+  (dolist (entry fins-entries)
+    (fins--with-entry entry
                        (when (string-match-p term file)
                          (setf marked t))))
-  (again--redisplay))
+  (fins--redisplay))
 
-(defun again-mark-by-content (term)
+(defun fins-mark-by-content (term)
   "Mark entries whose file contains TERM."
   (interactive "sMark by content: ")
   (let ((matching (make-hash-table :test #'equal)))
-    (dolist (file (again--run-grep again-grep-files-command term (again--files)))
+    (dolist (file (fins--run-grep fins-grep-files-command term (fins--files)))
       (puthash file t matching))
-    (dolist (entry again-entries)
-      (again--with-entry entry
+    (dolist (entry fins-entries)
+      (fins--with-entry entry
                          (when (gethash file matching)
                            (setf marked t))))
-    (again--redisplay)))
+    (fins--redisplay)))
 
-(defun again-mark-by-lines (term)
+(defun fins-mark-by-lines (term)
   "Mark grep entries whose content matches TERM."
   (interactive "sMark by lines: ")
-  (dolist (entry again-entries)
-    (again--with-entry entry
+  (dolist (entry fins-entries)
+    (fins--with-entry entry
                        (when (and content (string-match-p term content))
                          (setf marked t))))
-  (again--redisplay))
+  (fins--redisplay))
 
-(defun again-toggle-marks ()
+(defun fins-toggle-marks ()
   "Toggle marks on all entries, or entries in the active region."
   (interactive)
   (if (use-region-p)
-      (again--toggle-mark-in-region (region-beginning) (region-end))
-    (dolist (entry again-entries)
-      (again--with-entry entry
+      (fins--toggle-mark-in-region (region-beginning) (region-end))
+    (dolist (entry fins-entries)
+      (fins--with-entry entry
                          (setf marked (not marked))))
-    (again--redisplay)))
+    (fins--redisplay)))
 
-(defun again-visit ()
+(defun fins-visit ()
   "Visit the file at point, jumping to the line if available."
   (interactive)
-  (when-let ((entry (again--entry-at-point)))
-    (again--with-entry entry
+  (when-let ((entry (fins--entry-at-point)))
+    (fins--with-entry entry
                        (find-file file)
                        (when line
                          (goto-char (point-min))
@@ -390,31 +390,31 @@ Malformed candidates are silently skipped."
                          (when column
                            (forward-char column))))))
 
-(defun again--entries-by-mark (value)
+(defun fins--entries-by-mark (value)
   "Return entries whose marked slot matches VALUE."
-  (cl-remove-if-not (lambda (entry) (eq (again-entry-marked entry) value))
-                    again-entries))
+  (cl-remove-if-not (lambda (entry) (eq (fins-entry-marked entry) value))
+                    fins-entries))
 
-(defun again-delete-marked ()
+(defun fins-delete-marked ()
   "Delete all marked entries."
   (interactive)
-  (setq-local again-entries (again--entries-by-mark nil))
-  (again--redisplay))
+  (setq-local fins-entries (fins--entries-by-mark nil))
+  (fins--redisplay))
 
-(defun again-collapse ()
+(defun fins-collapse ()
   "Collapse grep entries into file entries."
   (interactive)
-  (setq-local again-entries
-              (mapcar (lambda (file) (make-again-entry :file file)) (again--files)))
-  (again--redisplay))
+  (setq-local fins-entries
+              (mapcar (lambda (file) (make-fins-entry :file file)) (fins--files)))
+  (fins--redisplay))
 
-(defun again--entry-to-file-candidate (entry)
+(defun fins--entry-to-file-candidate (entry)
   "Convert ENTRY to a file candidate string."
-  (again--with-entry entry file))
+  (fins--with-entry entry file))
 
-(defun again--entry-to-grep-candidate (entry)
+(defun fins--entry-to-grep-candidate (entry)
   "Convert ENTRY to a consult-grep candidate string."
-  (again--with-entry entry
+  (fins--with-entry entry
                      (let* ((file-str (copy-sequence file))
                             (line-str (number-to-string line))
                             (str (concat file-str ":" line-str ":" content)))
@@ -424,45 +424,45 @@ Malformed candidates are silently skipped."
                                           'face 'consult-line-number str)
                        str)))
 
-(defun again--entry-to-candidate (entry type)
+(defun fins--entry-to-candidate (entry type)
   "Convert ENTRY to an embark candidate string of TYPE."
   (cond
-   ((eq type 'consult-grep) (again--entry-to-grep-candidate entry))
-   ((eq type 'file) (again--entry-to-file-candidate entry))))
+   ((eq type 'consult-grep) (fins--entry-to-grep-candidate entry))
+   ((eq type 'file) (fins--entry-to-file-candidate entry))))
 
-(defun again--candidate-type ()
-  "Return the embark candidate type for the current Again buffer."
+(defun fins--candidate-type ()
+  "Return the embark candidate type for the current Fins buffer."
   ;; All entries are valid grep candidates, and embark-consult is
   ;; available: consult-grep candidate
   (if (and (featurep 'embark-consult)
-           (cl-every #'again--grep-entry-p again-entries))
+           (cl-every #'fins--grep-entry-p fins-entries))
       'consult-grep
     ;; otherwise: file candidate
     'file))
 
-(defun again-target-finder ()
+(defun fins-target-finder ()
   "Return the embark target for the entry at point."
-  (when (derived-mode-p 'again-mode)
-    (when-let ((entry (again--entry-at-point)))
-      (let ((type (again--candidate-type)))
+  (when (derived-mode-p 'fins-mode)
+    (when-let ((entry (fins--entry-at-point)))
+      (let ((type (fins--candidate-type)))
         `(,type
-          ,(again--entry-to-candidate entry type)
+          ,(fins--entry-to-candidate entry type)
           ,(line-beginning-position) . ,(line-end-position))))))
 
-(defun again-candidate-collector ()
+(defun fins-candidate-collector ()
   "Return marked or all entries as embark candidates."
-  (when (derived-mode-p 'again-mode)
-    (let* ((entries (or (again--entries-by-mark t) again-entries))
-           (type (again--candidate-type)))
+  (when (derived-mode-p 'fins-mode)
+    (let* ((entries (or (fins--entries-by-mark t) fins-entries))
+           (type (fins--candidate-type)))
       (cons type (mapcar (lambda (entry)
-                           (again--entry-to-candidate entry type))
+                           (fins--entry-to-candidate entry type))
                          entries)))))
 
 (with-eval-after-load 'embark
-  (add-to-list 'embark-multitarget-actions #'again-import)
-  (add-to-list 'embark-target-finders #'again-target-finder)
-  (add-to-list 'embark-candidate-collectors #'again-candidate-collector)
-  (define-key embark-general-map (kbd "N") #'again-import))
+  (add-to-list 'embark-multitarget-actions #'fins-import)
+  (add-to-list 'embark-target-finders #'fins-target-finder)
+  (add-to-list 'embark-candidate-collectors #'fins-candidate-collector)
+  (define-key embark-general-map (kbd "N") #'fins-import))
 
-(provide 'again)
-;;; again.el ends here
+(provide 'fins)
+;;; fins.el ends here
