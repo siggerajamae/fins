@@ -23,12 +23,12 @@
   :type 'string
   :group 'again)
 
-(defcustom again-grep-files-command "rg --files-with-matches --color=never"
+(defcustom again-grep-files-command "rg --files-with-matches --smart-case --color=never"
   "Command used for finding files whose contents match a term."
   :type 'string
   :group 'again)
 
-(defcustom again-grep-lines-command "rg --no-heading --with-filename --line-number --column --color=never"
+(defcustom again-grep-lines-command "rg --no-heading --with-filename --smart-case --line-number --column --color=never"
   "Command used for grepping lines from files."
   :type 'string
   :group 'again)
