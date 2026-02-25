@@ -45,15 +45,15 @@
 
 (defface again-file
   '((t :inherit font-lock-function-name-face))
-  "Face used to highlight files in again buffers.")
+  "Face used to highlight files in Again buffers.")
 
 (defface again-line-number
   '((t :inherit font-lock-keyword-face))
-  "Face used to highlight line numbers in again buffers.")
+  "Face used to highlight line numbers in Again buffers.")
 
 (defface again-mark
   '((t :inherit warning))
-  "Face used to highlight marked entries in again buffers.")
+  "Face used to highlight marked entries in Again buffers.")
 
 (defvar-keymap again-mode-map
   :doc "Keymap for Again mode."
@@ -82,6 +82,20 @@
   column
   content
   marked)
+
+(defmacro again--with-entry (entry &rest body)
+  "Bind the slots of ENTRY to variables and execute BODY.
+Binds `file', `line', `column', `content', and `marked'.
+Supports `setf' on the bindings."
+  (declare (indent 1))
+  (let ((sym (gensym "entry")))
+    `(let ((,sym ,entry))
+       (cl-symbol-macrolet ((file (again-entry-file ,sym))
+                            (line (again-entry-line ,sym))
+                            (column (again-entry-column ,sym))
+                            (content (again-entry-content ,sym))
+                            (marked (again-entry-marked ,sym)))
+         ,@body))))
 
 (defvar-local again-entries nil
   "List of `again-entry' entries in the current buffer.")
@@ -114,20 +128,42 @@
           "\\'")         ; end of string
   "Regexp matching a valid file name.")
 
+(defun again--grep-entry-p (entry)
+  "Return non-nil if ENTRY is a grep entry with line, column, and content."
+  (again--with-entry entry
+                     (and line column content)))
+
+(defun again--format-mark (marked)
+  "Format the mark indicator for MARKED."
+  (if marked
+      (propertize "*" 'face 'again-mark)
+    " "))
+
+(defun again--format-file (file)
+  "Format FILE name with face."
+  (propertize file 'face 'again-file))
+
+(defun again--format-line (line)
+  "Format LINE number with face."
+  (propertize (number-to-string line) 'face 'again-line-number))
+
+(defun again--format-content (content)
+  "Format CONTENT string."
+  content)
+
 (defun again--format-entry (entry)
   "Format ENTRY as a display string."
-  (let* ((mark (if (again-entry-marked entry)
-                   (propertize "*" 'face 'again-mark)
-                 " "))
-         (file (propertize (again-entry-file entry) 'face 'again-file))
-         (line (when (again-entry-line entry)
-                 (propertize (number-to-string (again-entry-line entry))
-                             'face 'again-line-number)))
-         (content (again-entry-content entry))
-         (text (if line
-                   (format "%s %s:%s:%s" mark file line content)
-                 (format "%s %s" mark file))))
-    (propertize text 'again-entry entry)))
+  (again--with-entry entry
+                     (let ((text (if (again--grep-entry-p entry)
+                                     (format "%s %s:%s:%s"
+                                             (again--format-mark marked)
+                                             (again--format-file file)
+                                             (again--format-line line)
+                                             (again--format-content content))
+                                   (format "%s %s"
+                                           (again--format-mark marked)
+                                           (again--format-file file)))))
+                       (propertize text 'again-entry entry))))
 
 (defun again--entry-at-point ()
   "Return the entry at point."
@@ -203,13 +239,19 @@ Malformed candidates are silently skipped."
   "Render `again-entries' into the current buffer."
   (let ((inhibit-read-only t)
         (buffer-undo-list t)
-        (line (line-number-at-pos)))
+        ;; Record line position and top of viewport
+        (line (line-number-at-pos))
+        (wstart (window-start)))
     (combine-change-calls (point-min) (point-max)
       (erase-buffer)
       (dolist (entry again-entries)
         (insert (again--format-entry entry) "\n")))
     (goto-char (point-min))
-    (forward-line (1- line))))
+    ;; Restore line position and top of viewport
+    ;; TODO: Does there exist a builtin with-command that is not
+    ;; invalidated by erase-buffer?
+    (forward-line (1- line))
+    (set-window-start nil wstart)))
 
 (defun again--redisplay-current ()
   "Redisplay the current line from its entry."
@@ -226,17 +268,19 @@ Malformed candidates are silently skipped."
     (goto-char beg)
     (while (< (point) end)
       (when-let ((entry (again--entry-at-point)))
-        (setf (again-entry-marked entry) (not (again-entry-marked entry)))
+        (again--with-entry entry
+                           (setf marked (not marked)))
         (again--redisplay-current))
       (forward-line 1))))
 
-(defun again--set-mark-in-region (beg end marked)
+(defun again--set-mark-in-region (beg end value)
   "Set MARKED on all entries between BEG and END, redisplaying each line."
   (save-excursion
     (goto-char beg)
     (while (< (point) end)
       (when-let ((entry (again--entry-at-point)))
-        (setf (again-entry-marked entry) marked)
+        (again--with-entry entry
+                           (setf marked value))
         (again--redisplay-current))
       (forward-line 1))))
 
@@ -246,7 +290,8 @@ Malformed candidates are silently skipped."
   (if (use-region-p)
       (again--set-mark-in-region (region-beginning) (region-end) t)
     (when-let ((entry (again--entry-at-point)))
-      (setf (again-entry-marked entry) t)
+      (again--with-entry entry
+                         (setf marked t))
       (again--redisplay-current)
       (forward-line 1))))
 
@@ -256,7 +301,8 @@ Malformed candidates are silently skipped."
   (if (use-region-p)
       (again--set-mark-in-region (region-beginning) (region-end) nil)
     (when-let ((entry (again--entry-at-point)))
-      (setf (again-entry-marked entry) nil)
+      (again--with-entry entry
+                         (setf marked nil))
       (again--redisplay-current)
       (forward-line 1))))
 
@@ -264,12 +310,20 @@ Malformed candidates are silently skipped."
   "Unmark all entries."
   (interactive)
   (dolist (entry again-entries)
-    (setf (again-entry-marked entry) nil))
+    (again--with-entry entry
+                       (setf marked nil)))
   (again--redisplay))
 
+(defun again--buffer-name ()
+  "Return a descriptive name for an Again buffer."
+  ;; TODO: Display the original command here if available
+  (format "*Again: %s*"
+          (file-name-nondirectory
+           (directory-file-name default-directory))))
+
 (defun again-import (candidates)
-  "Import CANDIDATES into an again buffer."
-  (let ((buf (get-buffer-create "*again*")))
+  "Import CANDIDATES into an Again buffer."
+  (let ((buf (generate-new-buffer (again--buffer-name))))
     (with-current-buffer buf
       (again-mode)
       (setq-local again-entries (again--parse-candidates candidates))
@@ -288,8 +342,9 @@ Malformed candidates are silently skipped."
   "Mark entries whose file matches TERM."
   (interactive "sMark by name: ")
   (dolist (entry again-entries)
-    (when (string-match-p term (again-entry-file entry))
-      (setf (again-entry-marked entry) t)))
+    (again--with-entry entry
+                       (when (string-match-p term file)
+                         (setf marked t))))
   (again--redisplay))
 
 (defun again-mark-by-content (term)
@@ -299,17 +354,18 @@ Malformed candidates are silently skipped."
     (dolist (file (again--run-grep again-grep-files-command term (again--files)))
       (puthash file t matching))
     (dolist (entry again-entries)
-      (when (gethash (again-entry-file entry) matching)
-        (setf (again-entry-marked entry) t)))
+      (again--with-entry entry
+                         (when (gethash file matching)
+                           (setf marked t))))
     (again--redisplay)))
 
 (defun again-mark-by-lines (term)
   "Mark grep entries whose content matches TERM."
   (interactive "sMark by lines: ")
   (dolist (entry again-entries)
-    (when (and (again-entry-content entry)
-               (string-match-p term (again-entry-content entry)))
-      (setf (again-entry-marked entry) t)))
+    (again--with-entry entry
+                       (when (and content (string-match-p term content))
+                         (setf marked t))))
   (again--redisplay))
 
 (defun again-toggle-marks ()
@@ -318,25 +374,31 @@ Malformed candidates are silently skipped."
   (if (use-region-p)
       (again--toggle-mark-in-region (region-beginning) (region-end))
     (dolist (entry again-entries)
-      (setf (again-entry-marked entry) (not (again-entry-marked entry))))
+      (again--with-entry entry
+                         (setf marked (not marked))))
     (again--redisplay)))
 
 (defun again-visit ()
   "Visit the file at point, jumping to the line if available."
   (interactive)
   (when-let ((entry (again--entry-at-point)))
-    (find-file (again-entry-file entry))
-    (when-let ((line (again-entry-line entry)))
-      (goto-char (point-min))
-      (forward-line (1- line))
-      (when-let ((col (again-entry-column entry)))
-        (forward-char col)))))
+    (again--with-entry entry
+                       (find-file file)
+                       (when line
+                         (goto-char (point-min))
+                         (forward-line (1- line))
+                         (when column
+                           (forward-char column))))))
+
+(defun again--entries-by-mark (value)
+  "Return entries whose marked slot matches VALUE."
+  (cl-remove-if-not (lambda (entry) (eq (again-entry-marked entry) value))
+                    again-entries))
 
 (defun again-delete-marked ()
   "Delete all marked entries."
   (interactive)
-  (setq-local again-entries
-              (cl-remove-if #'again-entry-marked again-entries))
+  (setq-local again-entries (again--entries-by-mark nil))
   (again--redisplay))
 
 (defun again-collapse ()
@@ -346,8 +408,60 @@ Malformed candidates are silently skipped."
               (mapcar (lambda (file) (make-again-entry :file file)) (again--files)))
   (again--redisplay))
 
+(defun again--entry-to-file-candidate (entry)
+  "Convert ENTRY to a file candidate string."
+  (again--with-entry entry file))
+
+(defun again--entry-to-grep-candidate (entry)
+  "Convert ENTRY to a consult-grep candidate string."
+  (again--with-entry entry
+                     (let* ((file-str (copy-sequence file))
+                            (line-str (number-to-string line))
+                            (str (concat file-str ":" line-str ":" content)))
+                       (put-text-property 0 (length file-str) 'face 'consult-file str)
+                       (put-text-property (1+ (length file-str))
+                                          (+ 1 (length file-str) (length line-str))
+                                          'face 'consult-line-number str)
+                       str)))
+
+(defun again--entry-to-candidate (entry type)
+  "Convert ENTRY to an embark candidate string of TYPE."
+  (cond
+   ((eq type 'consult-grep) (again--entry-to-grep-candidate entry))
+   ((eq type 'file) (again--entry-to-file-candidate entry))))
+
+(defun again--candidate-type ()
+  "Return the embark candidate type for the current Again buffer."
+  ;; All entries are valid grep candidates, and embark-consult is
+  ;; available: consult-grep candidate
+  (if (and (featurep 'embark-consult)
+           (cl-every #'again--grep-entry-p again-entries))
+      'consult-grep
+    ;; otherwise: file candidate
+    'file))
+
+(defun again-target-finder ()
+  "Return the embark target for the entry at point."
+  (when (derived-mode-p 'again-mode)
+    (when-let ((entry (again--entry-at-point)))
+      (let ((type (again--candidate-type)))
+        `(,type
+          ,(again--entry-to-candidate entry type)
+          ,(line-beginning-position) . ,(line-end-position))))))
+
+(defun again-candidate-collector ()
+  "Return marked or all entries as embark candidates."
+  (when (derived-mode-p 'again-mode)
+    (let* ((entries (or (again--entries-by-mark t) again-entries))
+           (type (again--candidate-type)))
+      (cons type (mapcar (lambda (entry)
+                           (again--entry-to-candidate entry type))
+                         entries)))))
+
 (with-eval-after-load 'embark
   (add-to-list 'embark-multitarget-actions #'again-import)
+  (add-to-list 'embark-target-finders #'again-target-finder)
+  (add-to-list 'embark-candidate-collectors #'again-candidate-collector)
   (define-key embark-general-map (kbd "N") #'again-import))
 
 (provide 'again)
