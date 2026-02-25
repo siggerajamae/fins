@@ -347,7 +347,7 @@ Malformed candidates are silently skipped."
   (interactive "sMark by content: ")
   (let ((matching (make-hash-table :test #'equal)))
     (dolist (file (fins--run-grep fins-grep-files-command term (fins--files)))
-      (puthash file t matching))
+      (puthash (file-relative-name file) t matching))
     (dolist (entry fins-entries)
       (fins--with-entry entry
                          (when (gethash file matching)
