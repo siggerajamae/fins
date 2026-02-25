@@ -28,7 +28,7 @@
   :type 'string
   :group 'again)
 
-(defcustom again-grep-lines-command "rg --no-heading --line-number --column --color=never"
+(defcustom again-grep-lines-command "rg --no-heading --with-filename --line-number --column --color=never"
   "Command used for grepping lines from files."
   :type 'string
   :group 'again)
@@ -153,7 +153,7 @@ When TERM is non-nil, highlight all matches of TERM in content."
   (cond
    ;; Match grep entries with column
    ((string-match again--grep-column-regexp candidate)
-    (let* ((file (match-string 1 candidate))
+    (let* ((file (file-relative-name (match-string 1 candidate)))
            (line (string-to-number (match-string 2 candidate)))
            (column (1- (string-to-number (match-string 3 candidate))))
            (content (match-string 4 candidate)))
@@ -165,7 +165,7 @@ When TERM is non-nil, highlight all matches of TERM in content."
        :content content)))
    ;; Match grep entries without column
    ((string-match again--grep-regexp candidate)
-    (let* ((file (match-string 1 candidate))
+    (let* ((file (file-relative-name (match-string 1 candidate)))
            (line (string-to-number (match-string 2 candidate)))
            (content (match-string 3 candidate))
            (column (again--find-highlight content)))
@@ -176,7 +176,7 @@ When TERM is non-nil, highlight all matches of TERM in content."
        :content content)))
    ;; Treat as plain file
    ((string-match-p again--file-regexp candidate)
-    (make-again-entry :file candidate))))
+    (make-again-entry :file (file-relative-name candidate)))))
 
 (defun again--parse-candidates (candidates &optional term)
   "Parse CANDIDATES into a list of `again-entry' structs.
