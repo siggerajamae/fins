@@ -18,11 +18,6 @@
   "Fins Greps And Interactively Narrows."
   :group 'matching)
 
-(defcustom fins-find-command "fd --color=never"
-  "Command used for finding files by name."
-  :type 'string
-  :group 'fins)
-
 (defcustom fins-grep-files-command "rg --files-with-matches --smart-case --color=never"
   "Command used for finding files whose contents match a term."
   :type 'string
