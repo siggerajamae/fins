@@ -370,9 +370,10 @@ Malformed candidates are silently skipped."
   "Expand entries into grep matches for TERM."
   (interactive "sGrep: ")
   (setq-local fins-entries
-              (fins--parse-jsons
-               (fins--run-grep fins-grep-lines-command term (fins--files))
-               term))
+              (delete-dups
+               (fins--parse-jsons
+                (fins--run-grep fins-grep-lines-command term (fins--files))
+                term)))
   (fins--redisplay))
 
 (defun fins-mark-by-name (term)
