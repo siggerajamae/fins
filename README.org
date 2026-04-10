@@ -1,15 +1,15 @@
-* FINS: Fins Interactively Narrows Searches
+* Fins Interactively Narrows Searches
 
 ** About
 
-FINS is an Emacs package for iterative, interactive narrowing of file and grep matches.
+Fins is an Emacs package for iterative, interactive narrowing of file and grep matches.
 Candidates are imported from Embark, then narrowed interactively in a dedicated buffer.
 
 - =fins-expand=: Grep within current files, expanding entries into matching lines
 - =fins-collapse=: Collapse grep entries back into file entries
 - =fins-mark-by-name=: Mark entries whose file matches a term
 - =fins-mark-by-content=: Mark entries whose file contains a term
-- =fins-mark-by-lines=: Mark grep entries whose content matches a term
+- =fins-mark-by-lines=: Mark grep entries whose matched line contains a term
 
 ** Example workflow
 
