@@ -208,7 +208,7 @@ When TERM is non-nil, highlight all matches of TERM in content."
 (defun fins--find-highlight (content)
   "Return position of first match highlight in CONTENT, or nil."
   (cl-dolist (face fins-highlight-faces)
-    (when-let ((pos (text-property-any 0 (length content) 'face face content)))
+    (when-let* ((pos (text-property-any 0 (length content) 'face face content)))
       (cl-return pos))))
 
 (defun fins--highlight (content term)
@@ -291,7 +291,7 @@ Malformed candidates are silently skipped."
 
 (defun fins--redisplay-current ()
   "Redisplay the current line from its entry."
-  (when-let ((entry (fins--entry-at-point)))
+  (when-let* ((entry (fins--entry-at-point)))
     (let ((inhibit-read-only t)
           (buffer-undo-list t))
       (delete-region (line-beginning-position) (1+ (line-end-position)))
@@ -303,7 +303,7 @@ Malformed candidates are silently skipped."
   (save-excursion
     (goto-char beg)
     (while (< (point) end)
-      (when-let ((entry (fins--entry-at-point)))
+      (when-let* ((entry (fins--entry-at-point)))
         (fins--with-entry entry
                            (setf marked (not marked)))
         (fins--redisplay-current))
@@ -314,7 +314,7 @@ Malformed candidates are silently skipped."
   (save-excursion
     (goto-char beg)
     (while (< (point) end)
-      (when-let ((entry (fins--entry-at-point)))
+      (when-let* ((entry (fins--entry-at-point)))
         (fins--with-entry entry
                            (setf marked value))
         (fins--redisplay-current))
@@ -325,7 +325,7 @@ Malformed candidates are silently skipped."
   (interactive)
   (if (use-region-p)
       (fins--set-mark-in-region (region-beginning) (region-end) t)
-    (when-let ((entry (fins--entry-at-point)))
+    (when-let* ((entry (fins--entry-at-point)))
       (fins--with-entry entry
                          (setf marked t))
       (fins--redisplay-current)
@@ -336,7 +336,7 @@ Malformed candidates are silently skipped."
   (interactive)
   (if (use-region-p)
       (fins--set-mark-in-region (region-beginning) (region-end) nil)
-    (when-let ((entry (fins--entry-at-point)))
+    (when-let* ((entry (fins--entry-at-point)))
       (fins--with-entry entry
                          (setf marked nil))
       (fins--redisplay-current)
@@ -419,7 +419,7 @@ Malformed candidates are silently skipped."
 (defun fins-visit ()
   "Visit the file at point, jumping to the line if available."
   (interactive)
-  (when-let ((entry (fins--entry-at-point)))
+  (when-let* ((entry (fins--entry-at-point)))
     (fins--with-entry entry
                        (find-file file)
                        (when line
@@ -481,7 +481,7 @@ Malformed candidates are silently skipped."
 (defun fins-target-finder ()
   "Return the embark target for the entry at point."
   (when (derived-mode-p 'fins-mode)
-    (when-let ((entry (fins--entry-at-point)))
+    (when-let* ((entry (fins--entry-at-point)))
       (let ((type (fins--candidate-type)))
         `(,type
           ,(fins--entry-to-candidate entry type)
