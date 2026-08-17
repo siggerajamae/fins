@@ -1,7 +1,7 @@
 ;;; fins.el --- Fins Interactively Narrows Searches -*- lexical-binding: t; -*-
 
 ;; Author: Sigge Rajamäe
-;; Version: 0.1.0
+;; Version: 0-git
 ;; Package-Requires: ((emacs "31.0"))
 ;; Keywords: matching, tools
 ;; URL: https://github.com/siggerajamae/fins
