@@ -91,6 +91,7 @@ and returns a `fins-entry', or nil if the candidate cannot be parsed."
   "e"   #'fins-expand
   "w"   #'fins-collapse
   "d"   #'fins-delete-marked
+  "k"   #'fins-keep-marked
   "RET" #'fins-visit)
 
 (define-derived-mode fins-mode special-mode "Fins"
@@ -481,6 +482,12 @@ The parser is chosen from `fins-parser-alist' according to
   "Delete all marked entries."
   (interactive)
   (setq-local fins-entries (fins--entries-by-mark nil))
+  (fins--redisplay))
+
+(defun fins-keep-marked ()
+  "Keep only the marked entries."
+  (interactive)
+  (setq-local fins-entries (fins--entries-by-mark t))
   (fins--redisplay))
 
 (defun fins-collapse ()
