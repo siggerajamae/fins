@@ -409,7 +409,8 @@ The parser is chosen from `fins-parser-alist' according to
       (fins-mode)
       (setq-local fins-entries (fins--parse-candidates candidates))
       (fins--redisplay))
-    (pop-to-buffer buf)))
+    ;; Deferred so the selection survives Embark restoring the window
+    (run-at-time 0 nil #'pop-to-buffer buf)))
 
 (defun fins-expand (term)
   "Expand entries into grep matches for TERM."
