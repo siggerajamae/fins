@@ -53,6 +53,17 @@
   :type 'boolean
   :group 'fins)
 
+(defcustom fins-parser-alist
+  '((consult-location . fins-parse-consult-location-candidate)
+    (consult-grep     . fins-parse-grep-candidate)
+    (file             . fins-parse-file-candidate)
+    (project-file     . fins-parse-file-candidate))
+  "Alist mapping embark target types to candidate parsers.
+Each parser is called with a candidate string and an optional term,
+and returns a `fins-entry', or nil if the candidate cannot be parsed."
+  :type '(alist :key-type symbol :value-type function)
+  :group 'fins)
+
 (defface fins-file
   '((t :inherit font-lock-function-name-face))
   "Face used to highlight files in Fins buffers.")
@@ -165,9 +176,9 @@ When TERM is non-nil, highlight all matches of TERM in content."
                     lines)))
 
 (defun fins--grep-entry-p (entry)
-  "Return non-nil if ENTRY is a grep entry with line, column, and content."
+  "Return non-nil if ENTRY is a grep entry with line and content."
   (fins--with-entry entry
-                     (and line column content)))
+    (and line content)))
 
 (defun fins--format-mark (marked)
   "Format the mark indicator for MARKED."
@@ -190,16 +201,16 @@ When TERM is non-nil, highlight all matches of TERM in content."
 (defun fins--format-entry (entry)
   "Format ENTRY as a display string."
   (fins--with-entry entry
-                     (let ((text (if (fins--grep-entry-p entry)
-                                     (format "%s %s:%s:%s"
-                                             (fins--format-mark marked)
-                                             (fins--format-file file)
-                                             (fins--format-line line)
-                                             (fins--format-content content))
-                                   (format "%s %s"
-                                           (fins--format-mark marked)
-                                           (fins--format-file file)))))
-                       (propertize text 'fins-entry entry))))
+    (let ((text (if (fins--grep-entry-p entry)
+                    (format "%s %s:%s:%s"
+                            (fins--format-mark marked)
+                            (fins--format-file file)
+                            (fins--format-line line)
+                            (fins--format-content content))
+                  (format "%s %s"
+                          (fins--format-mark marked)
+                          (fins--format-file file)))))
+      (propertize text 'fins-entry entry))))
 
 (defun fins--entry-at-point ()
   "Return the entry at point."
@@ -219,8 +230,8 @@ When TERM is non-nil, highlight all matches of TERM in content."
                               'match nil content)
       (setq start (match-end 0)))))
 
-(defun fins--parse-candidate (candidate &optional term)
-  "Parse CANDIDATE string into an `fins-entry'.
+(defun fins-parse-grep-candidate (candidate &optional term)
+  "Parse a grep CANDIDATE string into an `fins-entry'.
 When TERM is non-nil, highlight all matches of TERM in content."
   (cond
    ;; Match grep entries with column
@@ -245,16 +256,51 @@ When TERM is non-nil, highlight all matches of TERM in content."
        :file file
        :line line
        :column column
-       :content content)))
-   ;; Treat as plain file
-   ((string-match-p fins--file-regexp candidate)
-    (make-fins-entry :file (file-relative-name candidate)))))
+       :content content)))))
+
+(defun fins-parse-file-candidate (candidate &optional _term)
+  "Parse a plain file CANDIDATE string into an `fins-entry'."
+  (when (string-match-p fins--file-regexp candidate)
+    (make-fins-entry :file (file-relative-name candidate))))
+
+(defun fins-parse-consult-location-candidate (candidate &optional term)
+  "Parse a `consult-location' CANDIDATE into an `fins-entry'.
+When TERM is non-nil, highlight all matches of TERM in content.
+Candidates from buffers not visiting a file are skipped."
+  (when-let* ((loc (consult--get-location candidate))
+              (buf (marker-buffer (car loc)))
+              (file (buffer-file-name buf)))
+    (when term (fins--highlight candidate term))
+    (make-fins-entry
+     :file (file-relative-name file)
+     :line (cdr loc)
+     :content candidate)))
+
+(defvar fins--import-type nil
+  "Embark target type of the candidates currently being imported.
+Bound by `fins--capture-import-type' while `fins-import' runs.")
+
+(defun fins--capture-import-type (&rest args)
+  "Bind `fins--import-type' to the target type in ARGS, then run the action.
+Meant to be used as an embark around action hook, which supplies the
+action and its arguments under the `:run' key of ARGS."
+  (let ((fins--import-type (plist-get args :type)))
+    (apply (plist-get args :run) args)))
 
 (defun fins--parse-candidates (candidates &optional term)
   "Parse CANDIDATES into a list of `fins-entry' structs.
 When TERM is non-nil, highlight all matches of TERM in content.
-Malformed candidates are silently skipped."
-  (delq nil (mapcar (lambda (candidate) (fins--parse-candidate candidate term)) candidates)))
+The parser is chosen from `fins-parser-alist' according to
+`fins--import-type'."
+  (let ((parse (alist-get fins--import-type fins-parser-alist)))
+    (unless parse
+      (user-error "Unrecognized import type `%s'" fins--import-type))
+    (let ((entries (delq nil (mapcar (lambda (candidate)
+                                       (funcall parse (copy-sequence candidate) term))
+                                     candidates))))
+      (unless entries
+        (user-error "No `%s' candidates could be parsed" fins--import-type))
+      entries)))
 
 (defun fins--run-grep (command term files)
   "Run COMMAND with TERM on FILES, return output lines."
@@ -284,8 +330,6 @@ Malformed candidates are silently skipped."
         (insert (fins--format-entry entry) "\n")))
     (goto-char (point-min))
     ;; Restore line position and top of viewport
-    ;; TODO: Does there exist a builtin with-command that is not
-    ;; invalidated by erase-buffer?
     (forward-line (1- line))
     (set-window-start nil wstart)))
 
@@ -305,7 +349,7 @@ Malformed candidates are silently skipped."
     (while (< (point) end)
       (when-let* ((entry (fins--entry-at-point)))
         (fins--with-entry entry
-                           (setf marked (not marked)))
+          (setf marked (not marked)))
         (fins--redisplay-current))
       (forward-line 1))))
 
@@ -316,7 +360,7 @@ Malformed candidates are silently skipped."
     (while (< (point) end)
       (when-let* ((entry (fins--entry-at-point)))
         (fins--with-entry entry
-                           (setf marked value))
+          (setf marked value))
         (fins--redisplay-current))
       (forward-line 1))))
 
@@ -327,7 +371,7 @@ Malformed candidates are silently skipped."
       (fins--set-mark-in-region (region-beginning) (region-end) t)
     (when-let* ((entry (fins--entry-at-point)))
       (fins--with-entry entry
-                         (setf marked t))
+        (setf marked t))
       (fins--redisplay-current)
       (forward-line 1))))
 
@@ -338,7 +382,7 @@ Malformed candidates are silently skipped."
       (fins--set-mark-in-region (region-beginning) (region-end) nil)
     (when-let* ((entry (fins--entry-at-point)))
       (fins--with-entry entry
-                         (setf marked nil))
+        (setf marked nil))
       (fins--redisplay-current)
       (forward-line 1))))
 
@@ -347,7 +391,7 @@ Malformed candidates are silently skipped."
   (interactive)
   (dolist (entry fins-entries)
     (fins--with-entry entry
-                       (setf marked nil)))
+      (setf marked nil)))
   (fins--redisplay))
 
 (defun fins--buffer-name ()
@@ -381,8 +425,8 @@ Malformed candidates are silently skipped."
   (interactive "sMark by name: ")
   (dolist (entry fins-entries)
     (fins--with-entry entry
-                       (when (string-match-p term file)
-                         (setf marked t))))
+      (when (string-match-p term file)
+        (setf marked t))))
   (fins--redisplay))
 
 (defun fins-mark-by-content (term)
@@ -393,8 +437,8 @@ Malformed candidates are silently skipped."
       (puthash (file-relative-name file) t matching))
     (dolist (entry fins-entries)
       (fins--with-entry entry
-                         (when (gethash file matching)
-                           (setf marked t))))
+        (when (gethash file matching)
+          (setf marked t))))
     (fins--redisplay)))
 
 (defun fins-mark-by-lines (term)
@@ -402,8 +446,8 @@ Malformed candidates are silently skipped."
   (interactive "sMark by lines: ")
   (dolist (entry fins-entries)
     (fins--with-entry entry
-                       (when (and content (string-match-p term content))
-                         (setf marked t))))
+      (when (and content (string-match-p term content))
+        (setf marked t))))
   (fins--redisplay))
 
 (defun fins-toggle-marks ()
@@ -413,7 +457,7 @@ Malformed candidates are silently skipped."
       (fins--toggle-mark-in-region (region-beginning) (region-end))
     (dolist (entry fins-entries)
       (fins--with-entry entry
-                         (setf marked (not marked))))
+        (setf marked (not marked))))
     (fins--redisplay)))
 
 (defun fins-visit ()
@@ -421,12 +465,12 @@ Malformed candidates are silently skipped."
   (interactive)
   (when-let* ((entry (fins--entry-at-point)))
     (fins--with-entry entry
-                       (find-file file)
-                       (when line
-                         (goto-char (point-min))
-                         (forward-line (1- line))
-                         (when column
-                           (forward-char column))))))
+      (find-file file)
+      (when line
+        (goto-char (point-min))
+        (forward-line (1- line))
+        (when column
+          (forward-char column))))))
 
 (defun fins--entries-by-mark (value)
   "Return entries whose marked slot matches VALUE."
@@ -453,14 +497,14 @@ Malformed candidates are silently skipped."
 (defun fins--entry-to-grep-candidate (entry)
   "Convert ENTRY to a consult-grep candidate string."
   (fins--with-entry entry
-                     (let* ((file-str (copy-sequence file))
-                            (line-str (number-to-string line))
-                            (str (concat file-str ":" line-str ":" content)))
-                       (put-text-property 0 (length file-str) 'face 'consult-file str)
-                       (put-text-property (1+ (length file-str))
-                                          (+ 1 (length file-str) (length line-str))
-                                          'face 'consult-line-number str)
-                       str)))
+    (let* ((file-str (copy-sequence file))
+           (line-str (number-to-string line))
+           (str (concat file-str ":" line-str ":" content)))
+      (put-text-property 0 (length file-str) 'face 'consult-file str)
+      (put-text-property (1+ (length file-str))
+                         (+ 1 (length file-str) (length line-str))
+                         'face 'consult-line-number str)
+      str)))
 
 (defun fins--entry-to-candidate (entry type)
   "Convert ENTRY to an embark candidate string of TYPE."
@@ -500,6 +544,7 @@ Malformed candidates are silently skipped."
   (add-to-list 'embark-multitarget-actions #'fins-import)
   (add-to-list 'embark-target-finders #'fins-target-finder)
   (add-to-list 'embark-candidate-collectors #'fins-candidate-collector)
+  (add-to-list 'embark-around-action-hooks '(fins-import fins--capture-import-type))
   (define-key embark-general-map (kbd "N") #'fins-import))
 
 (provide 'fins)
