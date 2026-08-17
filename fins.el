@@ -2,7 +2,7 @@
 
 ;; Author: Sigge Rajamäe
 ;; Version: 0.1.0
-;; Package-Requires: ((emacs "29.1"))
+;; Package-Requires: ((emacs "31.0"))
 ;; Keywords: matching, tools
 ;; URL: https://github.com/siggerajamae/fins
 
