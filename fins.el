@@ -310,7 +310,7 @@ The parser is chosen from `fins-parser-alist' according to
          (base-args (cdr args))
          (expanded-files (mapcar #'expand-file-name files)))
     (with-temp-buffer
-      (apply #'call-process program nil t nil
+      (apply #'call-process program nil (list t nil) nil
              (append base-args (list term) expanded-files))
       (split-string (buffer-string) "\n" t))))
 
