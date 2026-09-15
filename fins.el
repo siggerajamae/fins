@@ -56,6 +56,7 @@
 (defcustom fins-parser-alist
   '((consult-location . fins-parse-consult-location-candidate)
     (consult-grep     . fins-parse-grep-candidate)
+    (consult-xref     . fins-parse-consult-xref-candidate)
     (file             . fins-parse-file-candidate)
     (project-file     . fins-parse-file-candidate))
   "Alist mapping embark target types to candidate parsers.
@@ -276,6 +277,21 @@ Candidates from buffers not visiting a file are skipped."
      :file file
      :line (cdr loc)
      :content candidate)))
+
+(defun fins-parse-consult-xref-candidate (candidate &optional term)
+  "Parse a `consult-xref' CANDIDATE into an `fins-entry'.
+When TERM is non-nil, highlight all matches of TERM in content.
+Candidates whose location is not an `xref-file-location' are skipped."
+  (when-let* ((xref (get-text-property 0 'consult-xref candidate))
+              (loc (xref-item-location xref))
+              ((xref-file-location-p loc))
+              (content (copy-sequence (xref-item-summary xref))))
+    (when term (fins--highlight content term))
+    (make-fins-entry
+     :file (xref-file-location-file loc)
+     :line (xref-file-location-line loc)
+     :column (xref-file-location-column loc)
+     :content content)))
 
 (defvar fins--import-type nil
   "Embark target type of the candidates currently being imported.
