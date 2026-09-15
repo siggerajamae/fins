@@ -237,7 +237,7 @@ When TERM is non-nil, highlight all matches of TERM in content."
   (cond
    ;; Match grep entries with column
    ((string-match fins--grep-column-regexp candidate)
-    (let* ((file (file-relative-name (match-string 1 candidate)))
+    (let* ((file (match-string 1 candidate))
            (line (string-to-number (match-string 2 candidate)))
            (column (1- (string-to-number (match-string 3 candidate))))
            (content (match-string 4 candidate)))
@@ -249,7 +249,7 @@ When TERM is non-nil, highlight all matches of TERM in content."
        :content content)))
    ;; Match grep entries without column
    ((string-match fins--grep-regexp candidate)
-    (let* ((file (file-relative-name (match-string 1 candidate)))
+    (let* ((file (match-string 1 candidate))
            (line (string-to-number (match-string 2 candidate)))
            (content (match-string 3 candidate))
            (column (fins--find-highlight content)))
@@ -262,7 +262,7 @@ When TERM is non-nil, highlight all matches of TERM in content."
 (defun fins-parse-file-candidate (candidate &optional _term)
   "Parse a plain file CANDIDATE string into an `fins-entry'."
   (when (string-match-p fins--file-regexp candidate)
-    (make-fins-entry :file (file-relative-name candidate))))
+    (make-fins-entry :file candidate)))
 
 (defun fins-parse-consult-location-candidate (candidate &optional term)
   "Parse a `consult-location' CANDIDATE into an `fins-entry'.
@@ -273,7 +273,7 @@ Candidates from buffers not visiting a file are skipped."
               (file (buffer-file-name buf)))
     (when term (fins--highlight candidate term))
     (make-fins-entry
-     :file (file-relative-name file)
+     :file file
      :line (cdr loc)
      :content candidate)))
 
