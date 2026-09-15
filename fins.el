@@ -80,9 +80,9 @@ and returns a `fins-entry', or nil if the candidate cannot be parsed."
 (defvar-keymap fins-mode-map
   :doc "Keymap for Fins mode."
   :parent special-mode-map
-  "* n" #'fins-mark-by-name
-  "* c" #'fins-mark-by-content
-  "* l" #'fins-mark-by-lines
+  "N" #'fins-mark-by-name
+  "c" #'fins-mark-by-content
+  "l" #'fins-mark-by-lines
   "t"   #'fins-toggle-marks
   "n"   #'next-line
   "p"   #'previous-line
