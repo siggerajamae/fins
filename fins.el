@@ -93,7 +93,8 @@ and returns a `fins-entry', or nil if the candidate cannot be parsed."
   "w"   #'fins-collapse
   "d"   #'fins-delete-marked
   "k"   #'fins-keep-marked
-  "RET" #'fins-visit)
+  "RET" #'fins-visit
+  "<remap> <undo>" #'fins-undo)
 
 (define-derived-mode fins-mode special-mode "Fins"
   "Major mode for iterative narrowing of file and grep matches."
@@ -122,6 +123,9 @@ Supports `setf' on the bindings."
 
 (defvar-local fins-entries nil
   "List of `fins-entry' entries in the current buffer.")
+
+(defvar-local fins-history nil
+  "Stack of previous `fins-entries' states, most recent first.")
 
 (defconst fins--grep-column-regexp
   (concat "\\`"          ; beginning of string
@@ -334,6 +338,10 @@ The parser is chosen from `fins-parser-alist' according to
   "Return deduplicated list of files from `fins-entries'."
   (delete-dups (mapcar #'fins-entry-file fins-entries)))
 
+(defun fins--push-history ()
+  "Push a copy of `fins-entries' onto `fins-history'."
+  (push (mapcar #'copy-fins-entry fins-entries) fins-history))
+
 (defun fins--redisplay ()
   "Render `fins-entries' into the current buffer."
   (let ((inhibit-read-only t)
@@ -384,6 +392,7 @@ The parser is chosen from `fins-parser-alist' according to
 (defun fins-mark ()
   "Mark the entry at point, or all entries in the active region."
   (interactive)
+  (fins--push-history)
   (if (use-region-p)
       (fins--set-mark-in-region (region-beginning) (region-end) t)
     (when-let* ((entry (fins--entry-at-point)))
@@ -395,6 +404,7 @@ The parser is chosen from `fins-parser-alist' according to
 (defun fins-unmark ()
   "Unmark the entry at point, or all entries in the active region."
   (interactive)
+  (fins--push-history)
   (if (use-region-p)
       (fins--set-mark-in-region (region-beginning) (region-end) nil)
     (when-let* ((entry (fins--entry-at-point)))
@@ -406,6 +416,7 @@ The parser is chosen from `fins-parser-alist' according to
 (defun fins-unmark-all ()
   "Unmark all entries."
   (interactive)
+  (fins--push-history)
   (dolist (entry fins-entries)
     (fins--with-entry entry
       (setf marked nil)))
@@ -431,6 +442,7 @@ The parser is chosen from `fins-parser-alist' according to
 (defun fins-expand (term)
   "Expand entries into grep matches for TERM."
   (interactive "sGrep: ")
+  (fins--push-history)
   (setq-local fins-entries
               (delete-dups
                (fins--parse-jsons
@@ -441,6 +453,7 @@ The parser is chosen from `fins-parser-alist' according to
 (defun fins-mark-by-name (term)
   "Mark entries whose file matches TERM."
   (interactive "sMark by name: ")
+  (fins--push-history)
   (dolist (entry fins-entries)
     (fins--with-entry entry
       (when (string-match-p term file)
@@ -450,6 +463,7 @@ The parser is chosen from `fins-parser-alist' according to
 (defun fins-mark-by-content (term)
   "Mark entries whose file contains TERM."
   (interactive "sMark by content: ")
+  (fins--push-history)
   (let ((matching (make-hash-table :test #'equal)))
     (dolist (file (fins--run-grep fins-grep-files-command term (fins--files)))
       (puthash (file-relative-name file) t matching))
@@ -462,6 +476,7 @@ The parser is chosen from `fins-parser-alist' according to
 (defun fins-mark-by-lines (term)
   "Mark grep entries whose content matches TERM."
   (interactive "sMark by lines: ")
+  (fins--push-history)
   (dolist (entry fins-entries)
     (fins--with-entry entry
       (when (and content (string-match-p term content))
@@ -471,6 +486,7 @@ The parser is chosen from `fins-parser-alist' according to
 (defun fins-toggle-marks ()
   "Toggle marks on all entries, or entries in the active region."
   (interactive)
+  (fins--push-history)
   (if (use-region-p)
       (fins--toggle-mark-in-region (region-beginning) (region-end))
     (dolist (entry fins-entries)
@@ -498,20 +514,34 @@ The parser is chosen from `fins-parser-alist' according to
 (defun fins-delete-marked ()
   "Delete all marked entries."
   (interactive)
+  (fins--push-history)
   (setq-local fins-entries (fins--entries-by-mark nil))
   (fins--redisplay))
 
 (defun fins-keep-marked ()
   "Keep only the marked entries."
   (interactive)
+  (fins--push-history)
   (setq-local fins-entries (fins--entries-by-mark t))
   (fins--redisplay))
 
 (defun fins-collapse ()
   "Collapse grep entries into file entries."
   (interactive)
+  (fins--push-history)
   (setq-local fins-entries
               (mapcar (lambda (file) (make-fins-entry :file file)) (fins--files)))
+  (fins--redisplay))
+
+(defun fins-undo ()
+  "Restore the previous state of entries."
+  (interactive)
+  ;; Pop all no-operations.
+  (while (and fins-history (equal (car fins-history) fins-entries))
+    (pop fins-history))
+  (unless fins-history
+    (user-error "No further undo information"))
+  (setq-local fins-entries (pop fins-history))
   (fins--redisplay))
 
 (defun fins--entry-to-file-candidate (entry)
