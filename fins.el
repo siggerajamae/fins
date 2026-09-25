@@ -50,7 +50,7 @@ the regexp matches the string."
   :type 'function
   :group 'fins)
 
-(defcustom fins-highlight-faces '(consult-highlight-match match)
+(defcustom fins-highlight-faces '(consult-highlight-match xref-match match)
   "Faces recognized as match highlights when parsing candidates."
   :type '(repeat face)
   :group 'fins)
@@ -67,8 +67,8 @@ the regexp matches the string."
     (file             . fins-parse-file-candidate)
     (project-file     . fins-parse-file-candidate))
   "Alist mapping embark target types to candidate parsers.
-Each parser is called with a candidate string and an optional term,
-and returns a `fins-entry', or nil if the candidate cannot be parsed."
+Each parser is called with a candidate string, and returns a
+`fins-entry', or nil if the candidate cannot be parsed."
   :type '(alist :key-type symbol :value-type function)
   :group 'fins)
 
@@ -162,30 +162,47 @@ Supports `setf' on the bindings."
           "\\'")         ; end of string
   "Regexp matching a valid file name.")
 
-(defun fins--parse-json (obj &optional term)
-  "Parse a JSON match OBJ into a `fins-entry'.
-When TERM is non-nil, highlight all matches of TERM in content."
+(defun fins--byte-to-char-offset (string offset)
+  "Return the character offset of byte OFFSET in UTF-8 encoded STRING."
+  (length (decode-coding-string (substring string 0 offset) 'utf-8-unix)))
+
+;; @Todo: Breaks when `fins-grep-lines-command' is not a ripgrep command.
+(defun fins--parse-json (obj)
+  "Parse a JSON match OBJ into a `fins-entry'."
   (let* ((data (gethash "data" obj))
-         (submatches (gethash "submatches" data))
          (path (gethash "text" (gethash "path" data)))
          (file (file-relative-name path))
          (line (gethash "line_number" data))
-         (column (gethash "start" (aref submatches 0)))
-         (content (string-trim-right (gethash "text" (gethash "lines" data)) "\n")))
-    (when term (fins--highlight content term))
+         (lines (gethash "lines" data))
+         ;; Man 1 rg: Since file paths or the contents of files are
+         ;; not guaranteed to be valid UTF-8 and JSON itself must be
+         ;; representable by a Unicode encoding, ripgrep will emit all
+         ;; data elements as objects with one of two keys: text or
+         ;; bytes. text is a normal JSON string when the data is valid
+         ;; UTF-8 while bytes is the base64 encoded contents of the
+         ;; data.
+         (bytes
+          (if-let* ((text (gethash "text" lines)))
+              (encode-coding-string text 'utf-8-unix)
+            (base64-decode-string (gethash "bytes" lines))))
+         (content (string-trim-right (decode-coding-string bytes 'utf-8-unix) "\n"))
+         (ranges (mapcar (lambda (submatch)
+                           (cons (fins--byte-to-char-offset bytes (gethash "start" submatch))
+                                 (fins--byte-to-char-offset bytes (gethash "end" submatch))))
+                         (gethash "submatches" data))))
+    (fins--highlight content ranges)
     (make-fins-entry
      :file file
      :line line
-     :column column
+     :column (caar ranges)
      :content content)))
 
-(defun fins--parse-jsons (lines &optional term)
-  "Parse JSON LINES into a list of `fins-entry' structs.
-When TERM is non-nil, highlight all matches of TERM in content."
+(defun fins--parse-jsons (lines)
+  "Parse JSON LINES into a list of `fins-entry' structs."
   (delq nil (mapcar (lambda (line)
                       (let ((obj (json-parse-string line)))
                         (when (equal (gethash "type" obj) "match")
-                          (fins--parse-json obj term))))
+                          (fins--parse-json obj))))
                     lines)))
 
 (defun fins--grep-entry-p (entry)
@@ -237,31 +254,31 @@ Matching respects case if REGEXP contains any upper-case characters."
   "Return the entry at point."
   (get-text-property (line-beginning-position) 'fins-entry))
 
-(defun fins--find-highlight (content)
-  "Return position of first match highlight in CONTENT, or nil."
-  (cl-dolist (face fins-highlight-faces)
-    (when-let* ((pos (text-property-any 0 (length content) 'face face content)))
-      (cl-return pos))))
+(defun fins--find-highlights (content)
+  "Return list of (START . END) ranges of match highlights in CONTENT."
+  (cl-loop for (start end props) in (object-intervals content)
+           when (cl-intersection (ensure-list (plist-get props 'face))
+                                 fins-highlight-faces)
+           collect (cons start end)))
 
-(defun fins--highlight (content term)
-  "Highlight all matches of TERM in CONTENT."
-  (let ((start 0))
-    (while (string-match (regexp-quote term) content start)
-      (add-face-text-property (match-beginning 0) (match-end 0)
-                              'match nil content)
-      (setq start (match-end 0)))))
+(defun fins--highlight (content ranges)
+  "Strip faces from CONTENT, then highlight RANGES in it.
+RANGES is a list of (START . END) ranges."
+  (remove-text-properties 0 (length content) '(face nil) content)
+  (dolist (range ranges)
+    (put-text-property (car range) (cdr range) 'face 'match content)))
 
-(defun fins-parse-grep-candidate (candidate &optional term)
-  "Parse a grep CANDIDATE string into an `fins-entry'.
-When TERM is non-nil, highlight all matches of TERM in content."
+(defun fins-parse-grep-candidate (candidate)
+  "Parse a grep CANDIDATE string into an `fins-entry'."
   (cond
    ;; Match grep entries with column
    ((string-match fins--grep-column-regexp candidate)
     (let* ((file (match-string 1 candidate))
            (line (string-to-number (match-string 2 candidate)))
-           (column (1- (string-to-number (match-string 3 candidate))))
-           (content (match-string 4 candidate)))
-      (when term (fins--highlight content term))
+           (content (match-string 4 candidate))
+           (ranges (fins--find-highlights content))
+           (column (caar ranges)))
+      (fins--highlight content ranges)
       (make-fins-entry
        :file file
        :line line
@@ -272,40 +289,39 @@ When TERM is non-nil, highlight all matches of TERM in content."
     (let* ((file (match-string 1 candidate))
            (line (string-to-number (match-string 2 candidate)))
            (content (match-string 3 candidate))
-           (column (fins--find-highlight content)))
+           (ranges (fins--find-highlights content))
+           (column (caar ranges)))
+      (fins--highlight content ranges)
       (make-fins-entry
        :file file
        :line line
        :column column
        :content content)))))
 
-(defun fins-parse-file-candidate (candidate &optional _term)
+(defun fins-parse-file-candidate (candidate)
   "Parse a plain file CANDIDATE string into an `fins-entry'."
   (when (string-match-p fins--file-regexp candidate)
     (make-fins-entry :file candidate)))
 
-(defun fins-parse-consult-location-candidate (candidate &optional term)
+(defun fins-parse-consult-location-candidate (candidate)
   "Parse a `consult-location' CANDIDATE into an `fins-entry'.
-When TERM is non-nil, highlight all matches of TERM in content.
 Candidates from buffers not visiting a file are skipped."
   (when-let* ((loc (consult--get-location candidate))
               (buf (marker-buffer (car loc)))
               (file (buffer-file-name buf)))
-    (when term (fins--highlight candidate term))
     (make-fins-entry
      :file file
      :line (cdr loc)
      :content candidate)))
 
-(defun fins-parse-consult-xref-candidate (candidate &optional term)
+(defun fins-parse-consult-xref-candidate (candidate)
   "Parse a `consult-xref' CANDIDATE into an `fins-entry'.
-When TERM is non-nil, highlight all matches of TERM in content.
 Candidates whose location is not an `xref-file-location' are skipped."
   (when-let* ((xref (get-text-property 0 'consult-xref candidate))
               (loc (xref-item-location xref))
               ((xref-file-location-p loc))
               (content (copy-sequence (xref-item-summary xref))))
-    (when term (fins--highlight content term))
+    (fins--highlight content (fins--find-highlights content))
     (make-fins-entry
      :file (xref-file-location-file loc)
      :line (xref-file-location-line loc)
@@ -323,16 +339,15 @@ action and its arguments under the `:run' key of ARGS."
   (let ((fins--import-type (plist-get args :type)))
     (apply (plist-get args :run) args)))
 
-(defun fins--parse-candidates (candidates &optional term)
+(defun fins--parse-candidates (candidates)
   "Parse CANDIDATES into a list of `fins-entry' structs.
-When TERM is non-nil, highlight all matches of TERM in content.
 The parser is chosen from `fins-parser-alist' according to
 `fins--import-type'."
   (let ((parse (alist-get fins--import-type fins-parser-alist)))
     (unless parse
       (user-error "Unrecognized import type `%s'" fins--import-type))
     (let ((entries (delq nil (mapcar (lambda (candidate)
-                                       (funcall parse (copy-sequence candidate) term))
+                                       (funcall parse (copy-sequence candidate)))
                                      candidates))))
       (unless entries
         (user-error "No `%s' candidates could be parsed" fins--import-type))
@@ -461,8 +476,7 @@ The parser is chosen from `fins-parser-alist' according to
   (setq-local fins-entries
               (delete-dups
                (fins--parse-jsons
-                (fins--run-grep fins-grep-lines-command term (fins--files))
-                term)))
+                (fins--run-grep fins-grep-lines-command term (fins--files)))))
   (fins--redisplay))
 
 (defun fins-mark-by-name (term)
