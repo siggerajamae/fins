@@ -43,6 +43,13 @@
   :type 'string
   :group 'fins)
 
+(defcustom fins-string-match-p-function #'fins--smart-string-match-p
+  "Function used for matching a term when marking entries.
+It is called with a regexp and a string, and returns non-nil if
+the regexp matches the string."
+  :type 'function
+  :group 'fins)
+
 (defcustom fins-highlight-faces '(consult-highlight-match match)
   "Faces recognized as match highlights when parsing candidates."
   :type '(repeat face)
@@ -185,6 +192,14 @@ When TERM is non-nil, highlight all matches of TERM in content."
   "Return non-nil if ENTRY is a grep entry with line and content."
   (fins--with-entry entry
     (and line content)))
+
+(defun fins--smart-string-match-p (regexp string)
+  "Return index of start of first match for REGEXP in STRING, or nil.
+Matching respects case if REGEXP contains any upper-case characters."
+  (let* ((has-upper (let ((case-fold-search nil))
+                      (string-match-p "[[:upper:]]" regexp)))
+         (case-fold-search (not has-upper)))
+    (string-match-p regexp string)))
 
 (defun fins--format-mark (marked)
   "Format the mark indicator for MARKED."
@@ -456,7 +471,7 @@ The parser is chosen from `fins-parser-alist' according to
   (fins--push-history)
   (dolist (entry fins-entries)
     (fins--with-entry entry
-      (when (string-match-p term file)
+      (when (funcall fins-string-match-p-function term file)
         (setf marked t))))
   (fins--redisplay))
 
@@ -479,7 +494,7 @@ The parser is chosen from `fins-parser-alist' according to
   (fins--push-history)
   (dolist (entry fins-entries)
     (fins--with-entry entry
-      (when (and content (string-match-p term content))
+      (when (and content (funcall fins-string-match-p-function term content))
         (setf marked t))))
   (fins--redisplay))
 
