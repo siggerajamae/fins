@@ -481,19 +481,27 @@ The parser is chosen from `fins-parser-alist' according to
                 (fins--run-grep fins-grep-lines-command term (fins--files)))))
   (fins--redisplay))
 
-(defun fins-mark-by-name (term)
-  "Mark entries whose file matches TERM."
-  (interactive "sMark by name: ")
+(defun fins-mark-by-name (term &optional unmark)
+  "Mark entries whose file matches TERM.
+With prefix argument UNMARK, unmark them instead."
+  (interactive (list (read-string (if current-prefix-arg
+                                      "Unmark by name: "
+                                    "Mark by name: "))
+                     current-prefix-arg))
   (fins--push-history)
   (dolist (entry fins-entries)
     (fins--with-entry entry
       (when (funcall fins-string-match-p-function term file)
-        (setf marked t))))
+        (setf marked (not unmark)))))
   (fins--redisplay))
 
-(defun fins-mark-by-content (term)
-  "Mark entries whose file contains TERM."
-  (interactive "sMark by content: ")
+(defun fins-mark-by-content (term &optional unmark)
+  "Mark entries whose file contains TERM.
+With prefix argument UNMARK, unmark them instead."
+  (interactive (list (read-string (if current-prefix-arg
+                                      "Unmark by content: "
+                                    "Mark by content: "))
+                     current-prefix-arg))
   (fins--push-history)
   (let ((matching (make-hash-table :test #'equal)))
     (dolist (file (fins--run-grep fins-grep-files-command term (fins--files)))
@@ -501,17 +509,21 @@ The parser is chosen from `fins-parser-alist' according to
     (dolist (entry fins-entries)
       (fins--with-entry entry
         (when (gethash file matching)
-          (setf marked t))))
+          (setf marked (not unmark)))))
     (fins--redisplay)))
 
-(defun fins-mark-by-lines (term)
-  "Mark grep entries whose content matches TERM."
-  (interactive "sMark by lines: ")
+(defun fins-mark-by-lines (term &optional unmark)
+  "Mark grep entries whose content matches TERM.
+With prefix argument UNMARK, unmark them instead."
+  (interactive (list (read-string (if current-prefix-arg
+                                      "Unmark by lines: "
+                                    "Mark by lines: "))
+                     current-prefix-arg))
   (fins--push-history)
   (dolist (entry fins-entries)
     (fins--with-entry entry
       (when (and content (funcall fins-string-match-p-function term content))
-        (setf marked t))))
+        (setf marked (not unmark)))))
   (fins--redisplay))
 
 (defun fins-toggle-marks ()
