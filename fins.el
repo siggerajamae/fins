@@ -1,6 +1,8 @@
-;;; fins.el --- Fins Interactively Narrows Searches -*- lexical-binding: t; -*-
+;;; fins.el --- Fins Interactively Narrows Searches  -*- lexical-binding: t; -*-
 
-;; Author: Sigge Rajamäe
+;; Copyright (C) 2026 Sigge Rajamäe
+
+;; Author: Sigge Rajamäe <sigge@rajamae.se>
 ;; Version: 0-git
 ;; Package-Requires: ((emacs "31.0"))
 ;; Keywords: matching, tools
@@ -19,7 +21,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
+;; along with this file.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -178,9 +180,9 @@ Supports `setf' on the bindings."
          ;; not guaranteed to be valid UTF-8 and JSON itself must be
          ;; representable by a Unicode encoding, ripgrep will emit all
          ;; data elements as objects with one of two keys: text or
-         ;; bytes. text is a normal JSON string when the data is valid
-         ;; UTF-8 while bytes is the base64 encoded contents of the
-         ;; data.
+         ;; bytes.  text is a normal JSON string when the data is
+         ;; valid UTF-8 while bytes is the base64 encoded contents of
+         ;; the data.
          (bytes
           (if-let* ((text (gethash "text" lines)))
               (encode-coding-string text 'utf-8-unix)
