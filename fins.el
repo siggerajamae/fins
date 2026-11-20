@@ -111,22 +111,22 @@ Each parser is called with a candidate string, and returns a
 
 (cl-defstruct fins-entry
   file
-  line
-  column
-  content
+  line-number
+  column-number
+  text
   marked)
 
 (defmacro fins--with-entry (entry &rest body)
   "Bind the slots of ENTRY to variables and execute BODY.
-Binds `file', `line', `column', `content', and `marked'.
+Binds `file', `line-number', `column-number', `text', and `marked'.
 Supports `setf' on the bindings."
   (declare (indent 1))
   (let ((sym (gensym "entry")))
     `(let ((,sym ,entry))
        (cl-symbol-macrolet ((file (fins-entry-file ,sym))
-                            (line (fins-entry-line ,sym))
-                            (column (fins-entry-column ,sym))
-                            (content (fins-entry-content ,sym))
+                            (line-number (fins-entry-line-number ,sym))
+                            (column-number (fins-entry-column-number ,sym))
+                            (text (fins-entry-text ,sym))
                             (marked (fins-entry-marked ,sym)))
          ,@body))))
 
@@ -144,7 +144,7 @@ Supports `setf' on the bindings."
           ":"            ; separator
           "\\([0-9]+\\)" ; capture column number
           ":"            ; separator
-          "\\(.*\\)"     ; capture content
+          "\\(.*\\)"     ; capture text
           "\\'")         ; end of string
   "Regexp matching grep output with column numbers.")
 
@@ -154,7 +154,7 @@ Supports `setf' on the bindings."
           ":"            ; separator
           "\\([0-9]+\\)" ; capture line number
           ":"            ; separator
-          "\\(.*\\)"     ; capture content
+          "\\(.*\\)"     ; capture text
           "\\'")         ; end of string
   "Regexp matching standard grep output format.")
 
@@ -174,7 +174,7 @@ Supports `setf' on the bindings."
   (let* ((data (gethash "data" obj))
          (path (gethash "text" (gethash "path" data)))
          (file (file-relative-name path))
-         (line (gethash "line_number" data))
+         (line-number (gethash "line_number" data))
          (lines (gethash "lines" data))
          ;; Man 1 rg: Since file paths or the contents of files are
          ;; not guaranteed to be valid UTF-8 and JSON itself must be
@@ -187,17 +187,17 @@ Supports `setf' on the bindings."
           (if-let* ((text (gethash "text" lines)))
               (encode-coding-string text 'utf-8-unix)
             (base64-decode-string (gethash "bytes" lines))))
-         (content (string-trim-right (decode-coding-string bytes 'utf-8-unix) "\n"))
+         (text (string-trim-right (decode-coding-string bytes 'utf-8-unix) "\n"))
          (ranges (mapcar (lambda (submatch)
                            (cons (fins--byte-to-char-offset bytes (gethash "start" submatch))
                                  (fins--byte-to-char-offset bytes (gethash "end" submatch))))
                          (gethash "submatches" data))))
-    (fins--highlight content ranges)
+    (fins--highlight text ranges)
     (make-fins-entry
      :file file
-     :line line
-     :column (caar ranges)
-     :content content)))
+     :line-number line-number
+     :column-number (caar ranges)
+     :text text)))
 
 (defun fins--parse-jsons (lines)
   "Parse JSON LINES into a list of `fins-entry' structs."
@@ -208,9 +208,9 @@ Supports `setf' on the bindings."
                     lines)))
 
 (defun fins--grep-entry-p (entry)
-  "Return non-nil if ENTRY is a grep entry with line and content."
+  "Return non-nil if ENTRY is a grep entry with line number and text."
   (fins--with-entry entry
-    (and line content)))
+    (and line-number text)))
 
 (defun fins--smart-string-match-p (regexp string)
   "Return index of start of first match for REGEXP in STRING, or nil.
@@ -230,45 +230,45 @@ Matching respects case if REGEXP contains any upper-case characters."
   "Format FILE name with face."
   (propertize file 'face 'fins-file))
 
-(defun fins--format-line (line)
-  "Format LINE number with face."
-  (propertize (number-to-string line) 'face 'fins-line-number))
+(defun fins--format-line-number (line-number)
+  "Format LINE-NUMBER with face."
+  (propertize (number-to-string line-number) 'face 'fins-line-number))
 
-(defun fins--format-content (content)
-  "Format CONTENT string."
-  content)
+(defun fins--format-text (text)
+  "Format TEXT string."
+  text)
 
 (defun fins--format-entry (entry)
   "Format ENTRY as a display string."
   (fins--with-entry entry
-    (let ((text (if (fins--grep-entry-p entry)
+    (let ((str (if (fins--grep-entry-p entry)
                     (format "%s %s:%s:%s"
                             (fins--format-mark marked)
                             (fins--format-file file)
-                            (fins--format-line line)
-                            (fins--format-content content))
+                            (fins--format-line-number line-number)
+                            (fins--format-text text))
                   (format "%s %s"
                           (fins--format-mark marked)
                           (fins--format-file file)))))
-      (propertize text 'fins-entry entry))))
+      (propertize str 'fins-entry entry))))
 
 (defun fins--entry-at-point ()
   "Return the entry at point."
   (get-text-property (line-beginning-position) 'fins-entry))
 
-(defun fins--find-highlights (content)
-  "Return list of (START . END) ranges of match highlights in CONTENT."
-  (cl-loop for (start end props) in (object-intervals content)
+(defun fins--find-highlights (text)
+  "Return list of (START . END) ranges of match highlights in TEXT."
+  (cl-loop for (start end props) in (object-intervals text)
            when (cl-intersection (ensure-list (plist-get props 'face))
                                  fins-highlight-faces)
            collect (cons start end)))
 
-(defun fins--highlight (content ranges)
-  "Strip faces from CONTENT, then highlight RANGES in it.
+(defun fins--highlight (text ranges)
+  "Strip faces from TEXT, then highlight RANGES in it.
 RANGES is a list of (START . END) ranges."
-  (remove-text-properties 0 (length content) '(face nil) content)
+  (remove-text-properties 0 (length text) '(face nil) text)
   (dolist (range ranges)
-    (put-text-property (car range) (cdr range) 'face 'match content)))
+    (put-text-property (car range) (cdr range) 'face 'match text)))
 
 (defun fins-parse-grep-candidate (candidate)
   "Parse a grep CANDIDATE string into an `fins-entry'."
@@ -276,29 +276,29 @@ RANGES is a list of (START . END) ranges."
    ;; Match grep entries with column
    ((string-match fins--grep-column-regexp candidate)
     (let* ((file (match-string 1 candidate))
-           (line (string-to-number (match-string 2 candidate)))
-           (content (match-string 4 candidate))
-           (ranges (fins--find-highlights content))
-           (column (caar ranges)))
-      (fins--highlight content ranges)
+           (line-number (string-to-number (match-string 2 candidate)))
+           (text (match-string 4 candidate))
+           (ranges (fins--find-highlights text))
+           (column-number (caar ranges)))
+      (fins--highlight text ranges)
       (make-fins-entry
        :file file
-       :line line
-       :column column
-       :content content)))
+       :line-number line-number
+       :column-number column-number
+       :text text)))
    ;; Match grep entries without column
    ((string-match fins--grep-regexp candidate)
     (let* ((file (match-string 1 candidate))
-           (line (string-to-number (match-string 2 candidate)))
-           (content (match-string 3 candidate))
-           (ranges (fins--find-highlights content))
-           (column (caar ranges)))
-      (fins--highlight content ranges)
+           (line-number (string-to-number (match-string 2 candidate)))
+           (text (match-string 3 candidate))
+           (ranges (fins--find-highlights text))
+           (column-number (caar ranges)))
+      (fins--highlight text ranges)
       (make-fins-entry
        :file file
-       :line line
-       :column column
-       :content content)))))
+       :line-number line-number
+       :column-number column-number
+       :text text)))))
 
 (defun fins-parse-file-candidate (candidate)
   "Parse a plain file CANDIDATE string into an `fins-entry'."
@@ -313,8 +313,8 @@ Candidates from buffers not visiting a file are skipped."
               (file (buffer-file-name buf)))
     (make-fins-entry
      :file file
-     :line (cdr loc)
-     :content candidate)))
+     :line-number (cdr loc)
+     :text candidate)))
 
 (defun fins-parse-consult-xref-candidate (candidate)
   "Parse a `consult-xref' CANDIDATE into an `fins-entry'.
@@ -322,13 +322,13 @@ Candidates whose location is not an `xref-file-location' are skipped."
   (when-let* ((xref (get-text-property 0 'consult-xref candidate))
               (loc (xref-item-location xref))
               ((xref-file-location-p loc))
-              (content (copy-sequence (xref-item-summary xref))))
-    (fins--highlight content (fins--find-highlights content))
+              (text (copy-sequence (xref-item-summary xref))))
+    (fins--highlight text (fins--find-highlights text))
     (make-fins-entry
      :file (xref-file-location-file loc)
-     :line (xref-file-location-line loc)
-     :column (xref-file-location-column loc)
-     :content content)))
+     :line-number (xref-file-location-line loc)
+     :column-number (xref-file-location-column loc)
+     :text text)))
 
 (defvar fins--import-type nil
   "Embark target type of the candidates currently being imported.
@@ -513,7 +513,7 @@ With prefix argument UNMARK, unmark them instead."
     (fins--redisplay)))
 
 (defun fins-mark-by-lines (term &optional unmark)
-  "Mark grep entries whose content matches TERM.
+  "Mark grep entries whose text matches TERM.
 With prefix argument UNMARK, unmark them instead."
   (interactive (list (read-string (if current-prefix-arg
                                       "Unmark by lines: "
@@ -522,7 +522,7 @@ With prefix argument UNMARK, unmark them instead."
   (fins--push-history)
   (dolist (entry fins-entries)
     (fins--with-entry entry
-      (when (and content (funcall fins-string-match-p-function term content))
+      (when (and text (funcall fins-string-match-p-function term text))
         (setf marked (not unmark)))))
   (fins--redisplay))
 
@@ -543,11 +543,11 @@ With prefix argument UNMARK, unmark them instead."
   (when-let* ((entry (fins--entry-at-point)))
     (fins--with-entry entry
       (find-file file)
-      (when line
+      (when line-number
         (goto-char (point-min))
-        (forward-line (1- line))
-        (when column
-          (forward-char column))))))
+        (forward-line (1- line-number))
+        (when column-number
+          (forward-char column-number))))))
 
 (defun fins--entries-by-mark (value)
   "Return entries whose marked slot matches VALUE."
@@ -595,11 +595,11 @@ With prefix argument UNMARK, unmark them instead."
   "Convert ENTRY to a consult-grep candidate string."
   (fins--with-entry entry
     (let* ((file-str (copy-sequence file))
-           (line-str (number-to-string line))
-           (str (concat file-str ":" line-str ":" content)))
+           (line-number-str (number-to-string line-number))
+           (str (concat file-str ":" line-number-str ":" text)))
       (put-text-property 0 (length file-str) 'face 'consult-file str)
       (put-text-property (1+ (length file-str))
-                         (+ 1 (length file-str) (length line-str))
+                         (+ 1 (length file-str) (length line-number-str))
                          'face 'consult-line-number str)
       str)))
 
