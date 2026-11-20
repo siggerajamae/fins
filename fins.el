@@ -68,7 +68,7 @@ the regexp matches the string."
     (consult-xref     . fins-parse-consult-xref-candidate)
     (file             . fins-parse-file-candidate)
     (project-file     . fins-parse-file-candidate))
-  "Alist mapping embark target types to candidate parsers.
+  "Alist mapping Embark target types to candidate parsers.
 Each parser is called with a candidate string, and returns a
 `fins-entry', or nil if the candidate cannot be parsed."
   :type '(alist :key-type symbol :value-type function)
@@ -343,7 +343,7 @@ Bound by `fins--capture-import-type' while `fins-import' runs.")
 
 (defun fins--capture-import-type (&rest args)
   "Bind `fins--import-type' to the target type in ARGS, then run the action.
-Meant to be used as an embark around action hook, which supplies the
+Meant to be used as an Embark around action hook, which supplies the
 action and its arguments under the `:run' key of ARGS."
   (let ((fins--import-type (plist-get args :type)))
     (apply (plist-get args :run) args)))
@@ -462,15 +462,23 @@ The parser is chosen from `fins-parser-alist' according to
   (fins--redisplay))
 
 (defun fins--buffer-name ()
-  "Return a descriptive name for an Fins buffer."
+  "Return a descriptive name for a Fins buffer."
   ;; TODO: Display the original command here if available
   (format "*Fins: %s*"
           (file-name-nondirectory
            (directory-file-name default-directory))))
 
 (defun fins-import (candidates)
-  "Import CANDIDATES into an Fins buffer."
-  (let ((buf (generate-new-buffer (fins--buffer-name))))
+  "Import CANDIDATES into a Fins buffer."
+  (let* ((recent-buf (car (last (match-buffers '(major-mode . fins-mode)))))
+         (buf (if (not recent-buf)
+                  (generate-new-buffer (fins--buffer-name))
+                (let ((name (fins--buffer-name))
+                      (dir default-directory))
+                  (with-current-buffer recent-buf
+                    (rename-buffer name t)
+                    (setq default-directory dir))
+                  recent-buf))))
     (with-current-buffer buf
       (fins-mode)
       (setq-local fins-entries (fins--parse-candidates candidates))
@@ -617,13 +625,13 @@ With prefix argument UNMARK, unmark them instead."
       str)))
 
 (defun fins--entry-to-candidate (entry type)
-  "Convert ENTRY to an embark candidate string of TYPE."
+  "Convert ENTRY to an Embark candidate string of TYPE."
   (cond
    ((eq type 'consult-grep) (fins--entry-to-grep-candidate entry))
    ((eq type 'file) (fins--entry-to-file-candidate entry))))
 
 (defun fins--candidate-type ()
-  "Return the embark candidate type for the current Fins buffer."
+  "Return the Embark candidate type for the current Fins buffer."
   ;; All entries are valid grep candidates, and embark-consult is
   ;; available: consult-grep candidate
   (if (and (featurep 'embark-consult)
@@ -633,7 +641,7 @@ With prefix argument UNMARK, unmark them instead."
     'file))
 
 (defun fins-target-finder ()
-  "Return the embark target for the entry at point."
+  "Return the Embark target for the entry at point."
   (when (derived-mode-p 'fins-mode)
     (when-let* ((entry (fins--entry-at-point)))
       (let ((type (fins--candidate-type)))
@@ -642,7 +650,7 @@ With prefix argument UNMARK, unmark them instead."
           ,(line-beginning-position) . ,(line-end-position))))))
 
 (defun fins-candidate-collector ()
-  "Return marked or all entries as embark candidates."
+  "Return marked or all entries as Embark candidates."
   (when (derived-mode-p 'fins-mode)
     (let* ((entries (or (fins--entries-by-mark t) fins-entries))
            (type (fins--candidate-type)))
