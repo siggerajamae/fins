@@ -89,10 +89,11 @@ Each parser is called with a candidate string, and returns a
 (defvar-keymap fins-mode-map
   :doc "Keymap for Fins mode."
   :parent special-mode-map
-  "N" #'fins-mark-by-name
-  "c" #'fins-mark-by-content
-  "l" #'fins-mark-by-lines
+  "N"   #'fins-mark-by-name
+  "c"   #'fins-mark-by-content
+  "l"   #'fins-mark-by-lines
   "t"   #'fins-toggle-marks
+  "f"   #'fins-toggle-display-with-directory
   "n"   #'next-line
   "p"   #'previous-line
   "m"   #'fins-mark
@@ -135,6 +136,10 @@ Supports `setf' on the bindings."
 
 (defvar-local fins-history nil
   "Stack of previous `fins-entries' states, most recent first.")
+
+(defvar fins-display-with-directory t
+  "If non-nil, Fins entries are displayed with their directory part.
+Otherwise, only the nondirectory part is displayed.")
 
 (defconst fins--grep-column-regexp
   (concat "\\`"          ; beginning of string
@@ -228,7 +233,9 @@ Matching respects case if REGEXP contains any upper-case characters."
 
 (defun fins--format-file (file)
   "Format FILE name with face."
-  (propertize file 'face 'fins-file))
+  (propertize (if fins-display-with-directory
+                  file
+                (file-name-nondirectory file)) 'face 'fins-file))
 
 (defun fins--format-line-number (line-number)
   "Format LINE-NUMBER with face."
@@ -242,14 +249,14 @@ Matching respects case if REGEXP contains any upper-case characters."
   "Format ENTRY as a display string."
   (fins--with-entry entry
     (let ((str (if (fins--grep-entry-p entry)
-                    (format "%s %s:%s:%s"
-                            (fins--format-mark marked)
-                            (fins--format-file file)
-                            (fins--format-line-number line-number)
-                            (fins--format-text text))
-                  (format "%s %s"
-                          (fins--format-mark marked)
-                          (fins--format-file file)))))
+                   (format "%s %s:%s:%s"
+                           (fins--format-mark marked)
+                           (fins--format-file file)
+                           (fins--format-line-number line-number)
+                           (fins--format-text text))
+                 (format "%s %s"
+                         (fins--format-mark marked)
+                         (fins--format-file file)))))
       (propertize str 'fins-entry entry))))
 
 (defun fins--entry-at-point ()
@@ -536,6 +543,12 @@ With prefix argument UNMARK, unmark them instead."
       (fins--with-entry entry
         (setf marked (not marked))))
     (fins--redisplay)))
+
+(defun fins-toggle-display-with-directory ()
+  "Toggle whether entries are displayed with their directory part."
+  (interactive)
+  (setq-local fins-display-with-directory (not fins-display-with-directory))
+  (fins--redisplay))
 
 (defun fins-visit ()
   "Visit the file at point, jumping to the line if available."
