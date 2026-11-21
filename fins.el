@@ -666,4 +666,5 @@ With prefix argument UNMARK, unmark them instead."
   (define-key embark-general-map (kbd "N") #'fins-import))
 
 (provide 'fins)
+
 ;;; fins.el ends here
